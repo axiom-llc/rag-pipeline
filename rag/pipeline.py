@@ -86,8 +86,11 @@ def ingest_directory(
 
     Files are embedded concurrently using a thread pool.  The Gemini embedding
     API is network-bound, so parallel requests reduce wall-clock time
-    significantly for large corpora.  ChromaDB upserts are serialised
-    internally by ChromaDB's write lock, so thread safety is not a concern here.
+    significantly for large corpora.
+
+    ChromaDB's Rust backend is not thread-safe during first initialisation, so
+    the client is pre-warmed on the calling thread before the pool spawns.
+    Subsequent upserts are serialised internally by ChromaDB's write lock.
 
     Args:
         extensions:  File extensions to match (default: [".txt", ".md"]).
@@ -100,6 +103,11 @@ def ingest_directory(
     d = Path(directory).expanduser()
     exts = set(extensions or [".txt", ".md"])
     paths = [p for p in d.rglob("*") if p.is_file() and p.suffix in exts]
+
+    # Pre-warm the ChromaDB client on the calling thread before spawning workers.
+    # This ensures the LRU cache is populated and the Rust backend is fully
+    # initialised before any worker thread touches it.
+    store._get_client(str(Path(config.chroma_path).expanduser()))
 
     results: list[dict] = []
     with ThreadPoolExecutor(max_workers=max_workers) as pool:

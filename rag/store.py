@@ -6,11 +6,13 @@ collection_stats) in a new store_pg.py and update the import in pipeline.py.
 Nothing else changes.
 
 Client caching
-    _get_client() is LRU-cached on the resolved path string.  This avoids
-    per-call client construction (overhead + potential file-lock races in tests).
-    Tests should call _get_client.cache_clear() in teardown to reset state.
+    _get_client() is LRU-cached on the resolved path string.  A threading lock
+    serialises first-time initialisation — ChromaDB's Rust backend is not
+    thread-safe during construction.  Subsequent calls hit the cache and bypass
+    the lock entirely.  Tests should call _get_client.cache_clear() in teardown.
 """
 from __future__ import annotations
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -19,13 +21,16 @@ from chromadb.config import Settings
 
 from rag.config import Config
 
+_init_lock = threading.Lock()
+
 
 @lru_cache(maxsize=8)
 def _get_client(path: str) -> chromadb.PersistentClient:
-    return chromadb.PersistentClient(
-        path=path,
-        settings=Settings(anonymized_telemetry=False),
-    )
+    with _init_lock:
+        return chromadb.PersistentClient(
+            path=path,
+            settings=Settings(anonymized_telemetry=False),
+        )
 
 
 def _get_collection(config: Config):
