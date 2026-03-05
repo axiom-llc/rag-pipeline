@@ -7,10 +7,17 @@ Endpoints
     DELETE /documents/<doc_id>
     GET    /stats
 
+Authentication
+    If RAG_API_TOKEN is set in the environment, every request must include:
+        Authorization: Bearer <token>
+    If RAG_API_TOKEN is unset, authentication is disabled (local use only).
+
 Config is loaded lazily on first request so that importing this module in
 tests does not raise even when GEMINI_API_KEY is absent.
 """
 from __future__ import annotations
+import os
+import hmac
 from flask import Flask, request, jsonify, abort
 from rag.config import load_config, Config
 from rag import pipeline, store
@@ -18,6 +25,7 @@ from rag import pipeline, store
 app = Flask(__name__)
 
 _config: Config | None = None
+_api_token: str = os.environ.get("RAG_API_TOKEN", "")
 
 
 def _get_config() -> Config:
@@ -25,6 +33,19 @@ def _get_config() -> Config:
     if _config is None:
         _config = load_config()
     return _config
+
+
+def _check_auth() -> None:
+    """Abort 401 if RAG_API_TOKEN is set and the request bearer doesn't match."""
+    if not _api_token:
+        return
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        abort(401, description="Authorization header missing or malformed")
+    token = auth[len("Bearer "):]
+    # Constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(token, _api_token):
+        abort(401, description="Invalid token")
 
 
 # ── Error handling ────────────────────────────────────────────────────────────
@@ -53,6 +74,7 @@ def ingest():
     Body: {"text": "...", "doc_id": "...", "metadata": {...}, "strategy": "fixed"}
     Response 201: {"doc_id": "...", "chunks_stored": N}
     """
+    _check_auth()
     body = request.get_json(force=True, silent=True) or {}
     text   = body.get("text",   "").strip()
     doc_id = body.get("doc_id", "").strip()
@@ -75,6 +97,7 @@ def query():
     Body: {"question": "..."}
     Response 200: {"answer": "...", "sources": [...], "chunks": [...], "chunk_count": N}
     """
+    _check_auth()
     body = request.get_json(force=True, silent=True) or {}
     question = body.get("question", "").strip()
     if not question:
@@ -84,17 +107,20 @@ def query():
 
 @app.get("/documents")
 def documents():
+    _check_auth()
     return jsonify({"documents": store.list_documents(_get_config())})
 
 
 @app.delete("/documents/<doc_id>")
 def delete_document(doc_id: str):
+    _check_auth()
     n = store.delete_document(doc_id, _get_config())
     return jsonify({"doc_id": doc_id, "chunks_deleted": n})
 
 
 @app.get("/stats")
 def stats():
+    _check_auth()
     return jsonify(store.collection_stats(_get_config()))
 
 

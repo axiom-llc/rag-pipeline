@@ -7,6 +7,7 @@ ingest() — chunk → embed → store
 query()  — embed query → retrieve → generate
 """
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from rag.config import Config
@@ -79,19 +80,33 @@ def ingest_directory(
     config: Config,
     extensions: list[str] | None = None,
     strategy: str = "fixed",
+    max_workers: int = 4,
 ) -> list[dict]:
-    """Ingest all matching files in a directory (recursive).
+    """Ingest all matching files in a directory (recursive), in parallel.
+
+    Files are embedded concurrently using a thread pool.  The Gemini embedding
+    API is network-bound, so parallel requests reduce wall-clock time
+    significantly for large corpora.  ChromaDB upserts are serialised
+    internally by ChromaDB's write lock, so thread safety is not a concern here.
 
     Args:
-        extensions: File extensions to match (default: [".txt", ".md"]).
+        extensions:  File extensions to match (default: [".txt", ".md"]).
+        max_workers: Thread pool size.  4 is a safe default; increase for
+                     large corpora with low API latency.
 
     Returns:
-        List of ingest result dicts, one per file.
+        List of ingest result dicts, one per file, in completion order.
     """
     d = Path(directory).expanduser()
     exts = set(extensions or [".txt", ".md"])
-    results = []
-    for p in d.rglob("*"):
-        if p.is_file() and p.suffix in exts:
-            results.append(ingest_file(str(p), config, strategy=strategy))
+    paths = [p for p in d.rglob("*") if p.is_file() and p.suffix in exts]
+
+    results: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {
+            pool.submit(ingest_file, str(p), config, None, strategy): p
+            for p in paths
+        }
+        for future in as_completed(futures):
+            results.append(future.result())
     return results

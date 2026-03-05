@@ -7,8 +7,8 @@ class Config:
     gemini_api_key: str       # "" acceptable for store-only operations
     chroma_path: str
     collection_name: str
-    chunk_size: int
-    chunk_overlap: int
+    chunk_size: int           # words per chunk (not tokens; ~1.33x token count for English)
+    chunk_overlap: int        # word overlap between consecutive chunks
     top_k: int
     score_threshold: float
     embedding_model: str
@@ -38,11 +38,11 @@ def load_config(**overrides) -> Config:
         gemini_api_key=(
             overrides.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
         ),
-        chroma_path=_get("chroma_path",       "RAG_CHROMA_PATH",       "~/.rag/chroma"),
-        collection_name=_get("collection_name","RAG_COLLECTION",        "documents"),
-        chunk_size=_get("chunk_size",          "RAG_CHUNK_SIZE",        512,  int),
-        chunk_overlap=_get("chunk_overlap",    "RAG_CHUNK_OVERLAP",     64,   int),
-        top_k=_get("top_k",                    "RAG_TOP_K",             5,    int),
+        chroma_path=_get("chroma_path",        "RAG_CHROMA_PATH",       "~/.rag/chroma"),
+        collection_name=_get("collection_name", "RAG_COLLECTION",        "documents"),
+        chunk_size=_get("chunk_size",           "RAG_CHUNK_SIZE",        512,  int),
+        chunk_overlap=_get("chunk_overlap",     "RAG_CHUNK_OVERLAP",     64,   int),
+        top_k=_get("top_k",                     "RAG_TOP_K",             5,    int),
         score_threshold=_get(
             "score_threshold", "RAG_SCORE_THRESHOLD", 0.4, float
         ),

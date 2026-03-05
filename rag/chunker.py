@@ -3,10 +3,15 @@
 Both functions return list[str].  Strategy is selected at ingest time via
 pipeline.ingest(strategy=...).
 
+chunk_size is measured in **words**, not tokens.  For English prose,
+word count ≈ 0.75 × token count, so the default of 512 words corresponds
+to roughly 680 tokens — comfortably within Gemini's embedding context window.
+Adjust RAG_CHUNK_SIZE empirically for your domain and script.
+
 Fixed-size (default)
     Splits on word boundaries to approximately chunk_size words, with a
-    configurable overlap between consecutive chunks.  Overlap preserves context
-    that would otherwise be severed at a boundary.
+    configurable word-level overlap between consecutive chunks.  Overlap
+    preserves context that would otherwise be severed at a boundary.
 
 Sentence
     Groups sentences (split on sentence-ending punctuation) until chunk_size
@@ -18,7 +23,13 @@ import re
 
 
 def chunk_fixed(text: str, chunk_size: int, overlap: int) -> list[str]:
-    """Split text into overlapping fixed-size chunks (word-boundary aligned)."""
+    """Split text into overlapping fixed-size chunks (word-boundary aligned).
+
+    Args:
+        text:       Input text.
+        chunk_size: Maximum words per chunk.
+        overlap:    Words of overlap between consecutive chunks. Must be < chunk_size.
+    """
     if overlap >= chunk_size:
         raise ValueError("overlap must be less than chunk_size")
     words = text.split()
@@ -31,7 +42,12 @@ def chunk_fixed(text: str, chunk_size: int, overlap: int) -> list[str]:
 
 
 def chunk_sentences(text: str, chunk_size: int) -> list[str]:
-    """Group sentences into chunks of up to chunk_size words."""
+    """Group sentences into chunks of up to chunk_size words.
+
+    Args:
+        text:       Input text.
+        chunk_size: Maximum words per chunk.
+    """
     sentences = re.split(r"(?<=[.!?])\s+", text)
     chunks: list[str] = []
     current: list[str] = []
