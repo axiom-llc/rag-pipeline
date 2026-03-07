@@ -19,7 +19,9 @@ from __future__ import annotations
 import os
 import hmac
 from flask import Flask, request, jsonify, abort
+from dotenv import load_dotenv
 from rag.config import load_config, Config
+load_dotenv()
 from rag import pipeline, store
 
 app = Flask(__name__)

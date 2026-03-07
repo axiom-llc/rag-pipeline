@@ -9,7 +9,6 @@ No hallucination from prior knowledge.  Every answer is bounded by what you
 put in.  Sources are cited inline.
 
 ```bash
-export GEMINI_API_KEY=your-key
 rag ingest ./docs
 rag query "what is our refund policy?"
 ```
@@ -20,7 +19,7 @@ Python 3.11+ · Gemini API · ChromaDB · Flask · MIT
 
 ## What It Does
 
-1. **Ingest** — chunks documents, embeds them via Gemini `text-embedding-004`,
+1. **Ingest** — chunks documents, embeds them via Gemini `gemini-embedding-001`,
    and stores vectors in a local ChromaDB collection
 2. **Retrieve** — embeds the query and finds the top-k most semantically
    similar chunks above a configurable similarity threshold
@@ -48,8 +47,10 @@ Copy `.env.example` to `.env` and set your key:
 
 ```bash
 cp .env.example .env
-# Edit .env — at minimum set GEMINI_API_KEY
+# Edit .env — set GEMINI_API_KEY at minimum
 ```
+
+`.env` is loaded automatically at startup via `python-dotenv`.
 
 ---
 
@@ -133,7 +134,7 @@ query / ingest
   rag/pipeline.py               ← ingest() and query(); public interface
       │
       ├─ rag/chunker.py         ← fixed-size or sentence-boundary chunking
-      ├─ rag/embedder.py        ← Gemini text-embedding-004 (stateless)
+      ├─ rag/embedder.py        ← Gemini gemini-embedding-001 (stateless)
       ├─ rag/store.py           ← ChromaDB upsert / cosine retrieval
       └─ rag/generator.py       ← Gemini 2.5 Flash; context-grounded answers
 
@@ -148,8 +149,14 @@ no globals, no module-level singletons.
 
 ## Design Notes
 
+**Embedding model.**  This pipeline uses `models/gemini-embedding-001`, the
+currently available Gemini embedding model via the `google-genai` SDK.  The
+default in `config.py` and `.env.example` reflects this.  Use
+`RAG_EMBEDDING_MODEL` to override if your API key has access to additional
+models.
+
 **Embedding asymmetry.**  The Gemini embedding API distinguishes `task_type`:
-`retrieval_document` for ingestion and `retrieval_query` for queries.  Using
+`RETRIEVAL_DOCUMENT` for ingestion and `RETRIEVAL_QUERY` for queries.  Using
 the wrong type for either degrades retrieval precision measurably.  Both are
 set explicitly in `embedder.py`.
 
@@ -166,9 +173,8 @@ size increase.
 **Grounding discipline.**  The generation prompt instructs the model to answer
 only from provided context, cite `doc_id` inline, and state explicitly when
 context is insufficient rather than speculate.  The `system_prompt` parameter
-in `generator.generate_answer()` exists for domain adaptation (other
-languages, specialised instructions) but changing it to permit prior-knowledge
-use defeats the pipeline's purpose.
+in `generator.generate_answer()` exists for domain adaptation but changing it
+to permit prior-knowledge use defeats the pipeline's purpose.
 
 **pgvector swap path.**  `store.py` is the only file that references
 ChromaDB.  To swap in pgvector: implement `upsert`, `query`,
@@ -181,28 +187,32 @@ time.  Validation fires at the entry to `embedder.embed_texts()` and
 `embedder.embed_query()`.  This allows store-only CLI commands to work
 without a key present.
 
+**Environment loading.**  Both `cli.py` and `server/app.py` call
+`load_dotenv()` at startup.  A `.env` file in the project root is loaded
+automatically — no manual `export` required.
+
 ---
 
 ## Configuration
 
-| Variable                | Default                        | Description                       |
-|-------------------------|--------------------------------|-----------------------------------|
-| `GEMINI_API_KEY`        | *(required for embed/generate)*| Gemini API key                    |
-| `RAG_CHROMA_PATH`       | `~/.rag/chroma`                | ChromaDB persistence directory    |
-| `RAG_COLLECTION`        | `documents`                    | ChromaDB collection name          |
-| `RAG_CHUNK_SIZE`        | `512`                          | Approximate words per chunk       |
-| `RAG_CHUNK_OVERLAP`     | `64`                           | Overlap between consecutive chunks|
-| `RAG_TOP_K`             | `5`                            | Max chunks retrieved per query    |
-| `RAG_SCORE_THRESHOLD`   | `0.4`                          | Min cosine similarity (0–1)       |
-| `RAG_EMBEDDING_MODEL`   | `models/text-embedding-004`    | Gemini embedding model            |
-| `RAG_GENERATION_MODEL`  | `gemini-2.5-flash`             | Gemini generation model           |
+| Variable                | Default                        | Description                        |
+|-------------------------|--------------------------------|------------------------------------|
+| `GEMINI_API_KEY`        | *(required for embed/generate)*| Gemini API key                     |
+| `RAG_CHROMA_PATH`       | `~/.rag/chroma`                | ChromaDB persistence directory     |
+| `RAG_COLLECTION`        | `documents`                    | ChromaDB collection name           |
+| `RAG_CHUNK_SIZE`        | `512`                          | Approximate words per chunk        |
+| `RAG_CHUNK_OVERLAP`     | `64`                           | Overlap between consecutive chunks |
+| `RAG_TOP_K`             | `5`                            | Max chunks retrieved per query     |
+| `RAG_SCORE_THRESHOLD`   | `0.4`                          | Min cosine similarity (0–1)        |
+| `RAG_EMBEDDING_MODEL`   | `models/gemini-embedding-001`  | Gemini embedding model             |
+| `RAG_GENERATION_MODEL`  | `gemini-2.5-flash`             | Gemini generation model            |
 
 ---
 
 ## Tests
 
 ```bash
-pytest tests/
+pytest tests/ -v --tb=short
 ```
 
 All tests mock Gemini API calls.  No live API or network access required.
@@ -213,14 +223,29 @@ tests/test_store.py      — score filtering, sort order, delete, list, stats
 tests/test_pipeline.py   — ingest/query integration, file and directory helpers
 ```
 
+To run with coverage (requires `pytest-cov`):
+
+```bash
+pip install pytest-cov
+pytest tests/ -v --tb=short --cov=rag --cov-report=term-missing
+```
+
 ---
 
 ## Evaluation
 
-Retrieval quality is measured using Precision@k and MRR against a ground-truth dataset.
+Retrieval quality is measured using Precision@k and MRR against a ground-truth
+dataset.
+
 ```bash
 python eval/eval_retrieval.py --dataset eval/dataset.json
+python eval/eval_retrieval.py --dataset eval/dataset.json --json
 ```
+
+The eval harness requires documents to be ingested before running.  The
+`relevant_doc_ids` in `eval/dataset.json` must match the `doc_id` values
+used at ingest time (i.e. the filename including extension when ingesting
+via the CLI).
 
 See [`eval/README.md`](eval/README.md) for full usage and tuning guidance.
 

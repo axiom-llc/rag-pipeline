@@ -17,6 +17,7 @@ import sys
 import json
 from pathlib import Path
 
+from dotenv import load_dotenv
 from rag.config import load_config
 from rag import pipeline, store
 
@@ -29,6 +30,7 @@ def _usage(msg: str | None = None) -> None:
 
 
 def main() -> None:
+    load_dotenv()
     args = sys.argv[1:]
     if not args:
         _usage()

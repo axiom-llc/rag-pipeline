@@ -89,29 +89,25 @@ def retrieve(
     Returns list of doc_ids (one per chunk, in rank order).
     """
     try:
-        from rag.config import Config
-        from rag.embedder import Embedder
-        from rag.store import Store
+        from rag.config import load_config
+        from rag import embedder, store
     except ImportError as exc:
         print(f"error: could not import rag modules — run from the rag-pipeline root: {exc}", file=sys.stderr)
         sys.exit(2)
 
-    cfg = Config(
+    cfg = load_config(
         gemini_api_key=api_key,
         chroma_path=chroma_path,
-        collection=collection,
+        collection_name=collection,
         top_k=top_k,
-        score_threshold=0.0,   # eval uses full ranking; threshold applied post-hoc by pipeline
+        score_threshold=0.0,  # eval uses full ranking; threshold applied post-hoc by pipeline
     )
 
-    embedder = Embedder(cfg)
-    store = Store(cfg)
+    query_vector = embedder.embed_query(query, cfg)
+    results = store.query(query_vector, cfg)
 
-    query_vector = embedder.embed_query(query)
-    results = store.query(query_vector, top_k=top_k)
-
-    # results: list of dicts with keys 'doc_id', 'score', 'text'
-    return [r["doc_id"] for r in results]
+    # results: list of dicts with keys 'text', 'metadata', 'score'
+    return [r["metadata"]["doc_id"] for r in results]
 
 
 # ---------------------------------------------------------------------------
