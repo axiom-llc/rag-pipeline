@@ -1,3 +1,4 @@
+[![PyPI](https://img.shields.io/pypi/v/axiom-rag.svg)](https://pypi.org/project/axiom-rag/)
 # axiom-rag
 ![CI](https://github.com/axiom-llc/axiom-rag/actions/workflows/ci.yml/badge.svg)
 
